@@ -1,0 +1,57 @@
+#downloadsView {
+	width: 750px;
+	height: 500px;
+}
+#downloadsView li {
+	align-items: center;
+}
+.download-progress:after {
+	content: attr(data-label);
+	position: absolute;
+    top: 0;
+    bottom: 0;
+    line-height: 1rem;
+    padding-left: 0.3rem;
+}
+#downloadsView progress {
+	flex-shrink: 0;
+}
+progress.state-paused::-webkit-progress-value {
+	 background: orange;
+}
+progress.state-error::-webkit-progress-value,
+progress.state-canceled::-webkit-progress-value {
+	background: red;
+}
+progress.state-completed::-webkit-progress-value {
+	background: lightgreen;
+}
+progress.state-working::-webkit-progress-value {
+	background: initial;
+}
+.download-actions {
+	width: 150px;
+	display: flex;
+	flex-shrink: 0;
+	justify-content: space-evenly;
+}
+.download-actions span {
+	border: 1px solid black;
+    border-radius: 8px;
+    background: gainsboro;
+    line-height: 1.3rem;
+    padding: 0 1rem;
+    cursor: pointer;
+}
+
+#downloadsView li {
+	justify-content: flex-start;
+}
+
+.download-completed {
+	display: flex;
+    justify-content: center;
+    align-items: center;
+	margin-top: 30px;
+	text-align: center;
+}

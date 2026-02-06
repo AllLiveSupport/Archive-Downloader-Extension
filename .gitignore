@@ -1,0 +1,13 @@
+# User-specific files
+memory-bank/
+.clinerules
+.gemini/
+.antigravity/
+
+# System files
+Thumbs.db
+.DS_Store
+
+# Temporary scripts
+resize_icons.py
+*.tmp
