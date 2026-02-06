@@ -57,6 +57,21 @@ Unlike simple downloaders, this tool is built to handle **bulk operations** and 
 
 ---
 
+## 📸 Visual Tour
+
+<div align="center">
+
+| **🔍 Advanced Search & Filter** | **⬇️ Batch Download Manager** |
+|:---:|:---:|
+| <img src="docs/images/PAGE1.PNG" width="400" alt="Search View"> | <img src="docs/images/PAGE2.PNG" width="400" alt="Download View"> |
+| *Easily filter item types and select files* | *Track progress, retry failures, and export logs* |
+
+</div>
+
+<br/>
+
+---
+
 ## 🛠️ Installation Guide
 
 Since this is a powerful developer tool, you can install it in "Developer Mode" on any Chromium-based browser.
