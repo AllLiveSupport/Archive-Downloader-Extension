@@ -107,22 +107,47 @@ function createDownloadItem(item) {
 		statusText = `Failed: ${item.errorMsg || 'Unknown error'}`;
 	}
 
-	// Simple progress bar
-	const progressBar = `
-		<div style="height:4px; background:#e2e8f0; border-radius:2px; margin-top:4px; overflow:hidden;">
-			<div style="height:100%; width:${progressPercent}%; background:${statusColor}; transition:width 0.2s;"></div>
-		</div>
-	`;
+	div.textContent = '';
+	const innerDiv = document.createElement('div');
+	innerDiv.style.flex = '1';
+	
+	const titleDiv = document.createElement('div');
+	titleDiv.className = 'item-title';
+	titleDiv.style.fontSize = '12px';
+	titleDiv.textContent = item.filename || 'File';
+	
+	const statusRow = document.createElement('div');
+	statusRow.style.display = 'flex';
+	statusRow.style.justifyContent = 'space-between';
+	statusRow.style.fontSize = '10px';
+	statusRow.style.color = statusColor;
+	statusRow.style.marginTop = '2px';
+	
+	const statusSpan = document.createElement('span');
+	statusSpan.textContent = statusText;
+	statusRow.appendChild(statusSpan);
+	
+	innerDiv.appendChild(titleDiv);
+	innerDiv.appendChild(statusRow);
+	
+	if (item.state === 'in_progress') {
+		const progressWrapper = document.createElement('div');
+		progressWrapper.style.height = '4px';
+		progressWrapper.style.background = '#e2e8f0';
+		progressWrapper.style.borderRadius = '2px';
+		progressWrapper.style.marginTop = '4px';
+		progressWrapper.style.overflow = 'hidden';
 
-	div.innerHTML = `
-		<div style="flex:1;">
-			<div class="item-title" style="font-size:12px;">${item.filename || 'File'}</div>
-			<div style="display:flex; justify-content:space-between; font-size:10px; color:${statusColor}; margin-top:2px;">
-				<span>${statusText}</span>
-			</div>
-			${item.state === 'in_progress' ? progressBar : ''}
-		</div>
-	`;
+		const progressFill = document.createElement('div');
+		progressFill.style.height = '100%';
+		progressFill.style.width = progressPercent + '%';
+		progressFill.style.background = statusColor;
+		progressFill.style.transition = 'width 0.2s';
+		progressWrapper.appendChild(progressFill);
+
+		innerDiv.appendChild(progressWrapper);
+	}
+	div.appendChild(innerDiv);
 
 	return div;
 }

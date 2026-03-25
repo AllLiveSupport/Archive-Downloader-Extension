@@ -14,16 +14,37 @@ function addLink(result, resultsIndex) {
 		label = result.url.split('/').pop().replace(/_/g, ' ');
 	}
 
-	div.innerHTML = `
-		<input type="checkbox" class="item-checkbox" id="cb_${resultsIndex}" disabled>
-		<div class="item-details">
-			<label for="cb_${resultsIndex}" class="item-title" title="${label}">${label}</label>
-			<!-- <span class="item-meta">Waiting...</span> -->
-		</div>
-		<div class="item-status">
-			<span class="size-badge" style="font-size:11px; color:var(--text-muted); font-weight:600;" hidden></span>
-		</div>
-	`;
+	div.textContent = '';
+	
+	const checkbox = document.createElement('input');
+	checkbox.type = 'checkbox';
+	checkbox.className = 'item-checkbox';
+	checkbox.id = `cb_${resultsIndex}`;
+	checkbox.disabled = true;
+	div.appendChild(checkbox);
+
+	const detailsDiv = document.createElement('div');
+	detailsDiv.className = 'item-details';
+	
+	const labelEl = document.createElement('label');
+	labelEl.htmlFor = `cb_${resultsIndex}`;
+	labelEl.className = 'item-title';
+	labelEl.title = label;
+	labelEl.textContent = label;
+	detailsDiv.appendChild(labelEl);
+	div.appendChild(detailsDiv);
+
+	const statusDiv = document.createElement('div');
+	statusDiv.className = 'item-status';
+	
+	const sizeBadge = document.createElement('span');
+	sizeBadge.className = 'size-badge';
+	sizeBadge.style.fontSize = '11px';
+	sizeBadge.style.color = 'var(--text-muted)';
+	sizeBadge.style.fontWeight = '600';
+	sizeBadge.hidden = true;
+	statusDiv.appendChild(sizeBadge);
+	div.appendChild(statusDiv);
 
 	list.appendChild(div);
 }
@@ -43,10 +64,17 @@ function addExtensionChip(ext, index) {
 	else if (ext.percentage > 50) colorStyle = 'color: var(--primary);';
 	else if (ext.percentage > 20) colorStyle = 'color: #f59e0b;';
 
-	chip.innerHTML = `
-		<span>${ext.ending}</span>
-		<span style="font-size:10px; opacity:0.8; ${colorStyle}">${ext.percentage}%</span>
-	`;
+	chip.textContent = '';
+	const span1 = document.createElement('span');
+	span1.textContent = ext.ending;
+	chip.appendChild(span1);
+
+	const span2 = document.createElement('span');
+	span2.style.fontSize = '10px';
+	span2.style.opacity = '0.8';
+	if (colorStyle) span2.style = colorStyle + ' font-size:10px; opacity:0.8;';
+	span2.textContent = ext.percentage + '%';
+	chip.appendChild(span2);
 
 	chip.addEventListener('click', () => {
 		onExtensionSelect(index);

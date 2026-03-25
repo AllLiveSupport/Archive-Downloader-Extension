@@ -197,9 +197,10 @@ function updateFooter() {
 
 	if (startDownload) {
 		startDownload.disabled = count === 0;
-		startDownload.innerHTML = count > 0 ?
-			`<span>Download (${count})</span>` :
-			`<span>Download</span>`;
+		startDownload.textContent = '';
+		const span = document.createElement('span');
+		span.textContent = count > 0 ? `Download (${count})` : `Download`;
+		startDownload.appendChild(span);
 	}
 }
 
