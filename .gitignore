@@ -1,0 +1,7 @@
+# System files
+Thumbs.db
+.DS_Store
+sd
+# Temporary scripts
+resize_icons.py
+*.tmp
