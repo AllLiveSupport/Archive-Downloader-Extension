@@ -35,6 +35,8 @@ const dataTemplate = {
 	pageHref: '',
 	collectionIdentifier: '',
 	isSingleItem: false,
+	isSearch: false,
+	isUserProfile: false,
 	allParams: {}
 }
 
@@ -67,6 +69,7 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 			data.collectionIdentifier = message.collectionIdentifier;
 			data.isSingleItem = message.isSingleItem || false;
 			data.isSearch = message.isSearch || false;
+			data.isUserProfile = message.isUserProfile || false;
 			data.allParams = message.allParams || {};
 			data.scanDone = false;
 
@@ -248,12 +251,43 @@ const fetchAllItemIdentifiers = async (tabId) => {
 		return;
 	}
 
-	// First, check if this is a Search Page scan
-	if (data.isSearch) {
-		// It's a search page, skip metadata and go straight to search
+	// First, check if this is a Search Page or User Profile scan
+	if (data.isSearch || data.isUserProfile) {
+		// It's a search page or user profile, skip metadata and go straight to search
 		let query = '';
-		if (data.allParams.query) query = data.allParams.query; // URL param 'query'
-		else if (data.allParams.q) query = data.allParams.q;     // URL param 'q' (advanced)
+		
+		if (data.isUserProfile) {
+			// Step 1: Probe for an item to find the actual uploader string (handle or email)
+			// We search for the literal handle string as a keyword
+			const handleKeyword = data.collectionIdentifier; // e.g. "@tarihvemedeniyet_org"
+			const probeUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(handleKeyword)}&fl[]=identifier&rows=1&output=json`;
+			
+			try {
+				const probeResp = await fetch(probeUrl);
+				const probeData = await probeResp.json();
+				if (probeData.response && probeData.response.docs && probeData.response.docs.length > 0) {
+					const firstItemId = probeData.response.docs[0].identifier;
+					// Fetch metadata for this item to extract the REAL uploader value
+					const metaResp = await fetch(`https://archive.org/metadata/${firstItemId}`);
+					const metaData = await metaResp.json();
+					if (metaData.metadata && metaData.metadata.uploader) {
+						// Success! We found the uploader identifier (could be email or handle)
+						query = `uploader:("${metaData.metadata.uploader}")`;
+						console.log(`Profile probe found uploader: ${metaData.metadata.uploader}`);
+					}
+				}
+			} catch (e) {
+				console.warn("Profile probe search failed:", e);
+			}
+
+			// Fallback if probe failed or handle wasn't found in uploader field
+			if (!query) {
+				query = `uploader:("${data.collectionIdentifier}") OR creator:("${data.collectionIdentifier}") OR "${data.collectionIdentifier}"`;
+			}
+		} else {
+			if (data.allParams.query) query = data.allParams.query; // URL param 'query'
+			else if (data.allParams.q) query = data.allParams.q;     // URL param 'q' (advanced)
+		}
 
 		if (!query) {
 			sendMessageSafe({ action: 'error', message: 'No search query found.' });

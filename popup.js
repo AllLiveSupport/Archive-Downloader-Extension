@@ -328,8 +328,13 @@ function startAutoScan(tab) {
 		collectionIdentifier = downloadMatch[1];
 	}
 
-	const isSingleItem = !tab.url.includes('?') && !tab.url.includes('pub_'); // Rough check
+	let isSingleItem = !tab.url.includes('?') && !tab.url.includes('pub_'); // Rough check
 	const isSearch = tab.url.includes('/search') || tab.url.includes('/search.php');
+	const isUserProfile = collectionIdentifier.startsWith('@');
+
+	if (isUserProfile) {
+		isSingleItem = false;
+	}
 
 	let allParams = {};
 	try {
@@ -353,6 +358,7 @@ function startAutoScan(tab) {
 		collectionIdentifier: collectionIdentifier,
 		isSingleItem: isSingleItem,
 		isSearch: isSearch,
+		isUserProfile: isUserProfile,
 		allParams: allParams,
 		tabId: tabId
 	});

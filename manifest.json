@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Archive Downloader",
   "description": "This extension helps you to download multiple files from archive.org collections",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "permissions": [
     "activeTab",
     "downloads",
