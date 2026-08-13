@@ -1,21 +1,66 @@
 function onStartDownloadClick() {
-	if (UIParams.selectedItemIndices.size === 0) return;
-	if (UIParams.selectedExtIndex === -1) {
-		alert("Please select a format.");
+	if (UIParams.selectedItemIndices.size === 0) {
+		alert("Please select at least one file to download.");
 		return;
 	}
 
 	console.log('Selected count:', UIParams.selectedItemIndices.size);
 
-	// Prepare simple data structure: just the indices
-	// Background will look up the URLs to ensure accuracy
 	let data = [];
 	UIParams.selectedItemIndices.forEach(idx => {
-		data.push({
-			resultIndex: idx,
-			extIndex: UIParams.selectedExtIndex
-		});
+		let info = UIParams.selectedItemMap.get(idx);
+		const result = UIParams.results[idx];
+
+		if (!info && result) {
+			if (UIParams.selectedCategory) {
+				info = getBestMatchForCategory(result, UIParams.selectedCategory);
+			} else if (UIParams.selectedExtIndex !== -1) {
+				const targetExt = UIParams.extensions[UIParams.selectedExtIndex];
+				const ending = targetExt ? targetExt.ending : '';
+				const u = result.downloadUrls.find(u => u.extIdx === UIParams.selectedExtIndex);
+				if (u) {
+					info = {
+						url: u.url,
+						extIdx: UIParams.selectedExtIndex,
+						extensionEnding: ending,
+						size: u.size,
+						format: u.format,
+						name: u.name
+					};
+				}
+			}
+			if (!info) {
+				info = getDefaultDownloadInfo(result);
+			}
+		}
+
+		if (info && info.url) {
+			data.push({
+				resultIndex: idx,
+				extIndex: info.extIdx,
+				extensionEnding: info.extensionEnding,
+				url: info.url
+			});
+		} else if (info) {
+			data.push({
+				resultIndex: idx,
+				extIndex: info.extIdx,
+				extensionEnding: info.extensionEnding
+			});
+		} else if (result && result.downloadUrls && result.downloadUrls.length > 0) {
+			const def = getDefaultDownloadInfo(result);
+			if (def) {
+				data.push({
+					resultIndex: idx,
+					extIndex: def.extIdx,
+					extensionEnding: def.extensionEnding,
+					url: def.url
+				});
+			}
+		}
 	});
+
+	if (data.length === 0) return;
 
 	chrome.runtime.sendMessage({
 		action: 'startDownload',
@@ -24,17 +69,11 @@ function onStartDownloadClick() {
 	});
 
 	showDownloadView();
-
-	// Open defaults downloads page if valid
-	/*
-	if (!downloadsTabId) {
-		chrome.tabs.create({url:'chrome://downloads', active: false}, function (tab){
-			downloadsTabId = tab.id;
-		});
-	}*/
 }
 
-// Global listeners for new buttons
+let isDownloadsPaused = false;
+
+// Global listeners for download actions
 document.addEventListener('DOMContentLoaded', () => {
 	const retryBtn = document.getElementById('retryFailedBtn');
 	if (retryBtn) {
@@ -44,9 +83,7 @@ document.addEventListener('DOMContentLoaded', () => {
 				tabId: tabId
 			}, (response) => {
 				if (response && response.count > 0) {
-					// Hide completed banner if shown
 					document.getElementById('downloadCompleted').hidden = true;
-					// Re-paint immediately to update UI state
 					paintDownloadView();
 				}
 			});
@@ -81,6 +118,46 @@ document.addEventListener('DOMContentLoaded', () => {
 			});
 		});
 	}
+
+	const pauseResumeAllBtn = document.getElementById('pauseResumeAllBtn');
+	if (pauseResumeAllBtn) {
+		pauseResumeAllBtn.addEventListener('click', () => {
+			if (!isDownloadsPaused) {
+				isDownloadsPaused = true;
+				pauseResumeAllBtn.innerText = '▶ Resume All';
+				chrome.runtime.sendMessage({ action: 'pauseDownloads', tabId: tabId }, () => {
+					paintDownloadView();
+				});
+			} else {
+				isDownloadsPaused = false;
+				pauseResumeAllBtn.innerText = '⏸ Pause All';
+				chrome.runtime.sendMessage({ action: 'resumeDownloads', tabId: tabId }, () => {
+					paintDownloadView();
+				});
+			}
+		});
+	}
+
+	const cancelAllBtn = document.getElementById('cancelAllBtn');
+	if (cancelAllBtn) {
+		cancelAllBtn.addEventListener('click', () => {
+			if (confirm('Cancel all pending and active downloads?')) {
+				isDownloadsPaused = false;
+				if (pauseResumeAllBtn) pauseResumeAllBtn.innerText = '⏸ Pause All';
+				chrome.runtime.sendMessage({ action: 'cancelDownloads', tabId: tabId }, () => {
+					paintDownloadView();
+				});
+			}
+		});
+	}
+
+	const newSearchBtn = document.getElementById('newSearchBtn');
+	if (newSearchBtn) {
+		newSearchBtn.addEventListener('click', () => {
+			document.getElementById('downloadsView').hidden = true;
+			document.getElementById('searchView').hidden = false;
+		});
+	}
 });
 
 function createDownloadItem(item) {
@@ -97,14 +174,20 @@ function createDownloadItem(item) {
 	if (item.state === 'in_progress') statusColor = 'var(--primary)';
 	if (item.state === 'completed') statusColor = 'var(--accent)';
 	if (item.state === 'interrupted' || item.state === 'canceled') statusColor = '#ef4444';
+	if (item.state === 'paused') statusColor = '#f59e0b';
 
 	if (item.state === 'in_progress') {
 		const mb = (item.bytesReceived / (1024 * 1024)).toFixed(1);
-		statusText = `${progressPercent}% (${mb} MB)`;
+		const totalMb = item.totalBytes > 0 ? ` / ${(item.totalBytes / (1024 * 1024)).toFixed(1)} MB` : '';
+		statusText = `${progressPercent}% (${mb}${totalMb})`;
 	} else if (item.state === 'starting') {
 		statusText = 'Starting...';
+	} else if (item.state === 'paused') {
+		statusText = 'Paused';
 	} else if (item.state === 'interrupted') {
-		statusText = `Failed: ${item.errorMsg || 'Unknown error'}`;
+		statusText = `Failed: ${item.errorMsg || 'Error'}`;
+	} else if (item.state === 'canceled') {
+		statusText = 'Canceled';
 	}
 
 	div.textContent = '';
@@ -130,10 +213,10 @@ function createDownloadItem(item) {
 	innerDiv.appendChild(titleDiv);
 	innerDiv.appendChild(statusRow);
 	
-	if (item.state === 'in_progress') {
+	if (item.state === 'in_progress' || item.state === 'paused') {
 		const progressWrapper = document.createElement('div');
 		progressWrapper.style.height = '4px';
-		progressWrapper.style.background = '#e2e8f0';
+		progressWrapper.style.background = 'var(--border)';
 		progressWrapper.style.borderRadius = '2px';
 		progressWrapper.style.marginTop = '4px';
 		progressWrapper.style.overflow = 'hidden';
@@ -155,8 +238,6 @@ function createDownloadItem(item) {
 function showDownloadView() {
 	document.getElementById('searchView').hidden = true;
 	document.getElementById('downloadsView').hidden = false;
-
-	// Start polling
 	paintDownloadView();
 }
 
@@ -168,7 +249,6 @@ function paintDownloadView() {
 		tabId: tabId
 	}, function (response) {
 		const list = document.getElementById('downloadProgressList');
-
 		let hasErrors = false;
 
 		if (response && response.progress) {
@@ -184,18 +264,16 @@ function paintDownloadView() {
 			});
 		}
 
-		// Show/Hide error actions
 		const errorActions = document.getElementById('errorActions');
 		if (errorActions) {
 			errorActions.style.display = hasErrors ? 'flex' : 'none';
 		}
 
-		// Check status
 		chrome.runtime.sendMessage({
 			action: 'getDownloadStatus',
 			tabId: tabId
 		}, function (statusResponse) {
-			if (statusResponse && statusResponse.status == 2) { // Completed
+			if (statusResponse && statusResponse.status == 2) {
 				document.getElementById('downloadCompleted').hidden = false;
 			} else {
 				setTimeout(paintDownloadView, 1000);

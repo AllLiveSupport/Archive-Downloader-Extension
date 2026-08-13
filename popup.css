@@ -143,11 +143,17 @@ main {
 .filters-section {
     display: flex;
     flex-direction: column;
-    gap: var(--spacing-sm);
+    gap: 10px;
+}
+
+.filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
 }
 
 .section-label {
-    font-size: 12px;
+    font-size: 11px;
     text-transform: uppercase;
     letter-spacing: 0.05em;
     color: var(--text-muted);
@@ -156,18 +162,18 @@ main {
 
 .chips-container {
     display: flex;
-    gap: var(--spacing-sm);
+    gap: 6px;
     overflow-x: auto;
-    padding-bottom: 4px; /* Space for scrollbar if any */
+    padding-bottom: 2px;
     scrollbar-width: thin;
 }
 
 .chip {
-    padding: 6px 12px;
+    padding: 5px 10px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: 99px;
-    font-size: 12px;
+    font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     white-space: nowrap;
@@ -175,7 +181,7 @@ main {
     user-select: none;
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: 5px;
 }
 
 .chip:hover {
@@ -187,6 +193,38 @@ main {
     background: var(--primary);
     color: white;
     border-color: var(--primary);
+}
+
+.category-chip {
+    padding: 6px 12px;
+    background: #f1f5f9;
+    border: 1px solid #cbd5e1;
+    font-weight: 600;
+    font-size: 12px;
+}
+
+.category-chip:hover {
+    background: #e2e8f0;
+    border-color: var(--primary);
+}
+
+.category-chip.active {
+    background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+    color: white;
+    border-color: #1d4ed8;
+    box-shadow: 0 2px 4px rgba(37, 99, 235, 0.25);
+}
+
+.format-badge {
+    display: inline-block;
+    padding: 1px 5px;
+    font-size: 10px;
+    font-weight: 700;
+    border-radius: 4px;
+    background: #e0f2fe;
+    color: #0369a1;
+    margin-right: 4px;
+    text-transform: uppercase;
 }
 
 /* --- List Section --- */
@@ -334,11 +372,13 @@ main {
 
 .btn-secondary {
     background: var(--surface);
-    border-color: var(--border);
+    border: 1px solid var(--border);
     color: var(--text-main);
 }
 .btn-secondary:hover:not(:disabled) {
-    background: #f1f5f9;
+    background: #e2e8f0;
+    color: var(--text-main);
+    border-color: #cbd5e1;
 }
 
 .btn-sm {
@@ -417,4 +457,122 @@ main {
 
 [hidden] {
     display: none !important;
+}
+
+/* --- Dark Mode Theme --- */
+body.dark-mode {
+    --bg-color: #0f172a;
+    --surface: #1e293b;
+    --surface-glass: rgba(30, 41, 59, 0.9);
+    --text-main: #f8fafc;
+    --text-muted: #94a3b8;
+    --border: #334155;
+}
+
+body.dark-mode .list-item {
+    background: #1e293b;
+    border-color: #334155;
+}
+
+body.dark-mode .list-item:hover {
+    border-color: #475569;
+}
+
+body.dark-mode .list-item.selected {
+    background-color: #1e3a8a;
+    border-color: #3b82f6;
+}
+
+body.dark-mode .category-chip {
+    background: #334155;
+    border-color: #475569;
+    color: #f8fafc;
+}
+
+body.dark-mode .chip {
+    background: #334155;
+    border-color: #475569;
+    color: #cbd5e1;
+}
+
+body.dark-mode .filter-input {
+    background: #1e293b;
+    color: #f8fafc;
+    border-color: #334155;
+}
+
+body.dark-mode .btn-secondary {
+    background: #1e293b;
+    border-color: #334155;
+    color: #f8fafc;
+}
+
+body.dark-mode .btn-secondary:hover:not(:disabled) {
+    background: #334155;
+    color: #ffffff;
+    border-color: #64748b;
+}
+
+body.dark-mode .notice-overlay {
+    background: rgba(15, 23, 42, 0.9);
+}
+
+body.dark-mode .app-footer {
+    background: rgba(30, 41, 59, 0.9);
+}
+
+/* --- Instant Search Filter Input --- */
+.list-search-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    width: 100%;
+    margin-bottom: 4px;
+}
+
+.search-icon {
+    position: absolute;
+    left: 10px;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.filter-input {
+    width: 100%;
+    padding: 6px 28px 6px 30px;
+    font-size: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    color: var(--text-main);
+    outline: none;
+    transition: border-color 0.2s, box-shadow 0.2s;
+    box-sizing: border-box;
+}
+
+.filter-input:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15);
+}
+
+.clear-filter-btn {
+    position: absolute;
+    right: 6px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 12px;
+    color: var(--text-muted);
+    padding: 2px 4px;
+    border-radius: 4px;
+}
+
+.clear-filter-btn:hover {
+    color: var(--text-main);
+}
+
+.download-control-actions {
+    display: flex;
+    gap: 8px;
+    padding: 0 var(--spacing-md) 10px var(--spacing-md);
 }

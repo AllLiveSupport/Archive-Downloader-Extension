@@ -2,11 +2,13 @@
   "manifest_version": 3,
   "name": "Archive Downloader",
   "description": "This extension helps you to download multiple files from archive.org collections",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "permissions": [
     "activeTab",
     "downloads",
-    "storage"
+    "storage",
+    "alarms",
+    "scripting"
   ],
   "host_permissions": [
     "https://archive.org/*"

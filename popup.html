@@ -27,7 +27,7 @@
             <span>Archive<strong>Downloader</strong></span>
         </div>
         <div class="header-actions">
-            <!-- <button id="themeToggle" class="icon-btn">🌙</button> -->
+            <button id="themeToggle" class="icon-btn" title="Toggle Theme">🌙</button>
             <button id="closeBtn" class="icon-btn" title="Close">✕</button>
         </div>
     </header>
@@ -56,12 +56,20 @@
 
         <!-- Format Filters (Chips) -->
         <div class="filters-section">
-            <span class="section-label">Formats</span>
-            <div id="extList" class="chips-container">
-                <!-- Chips injected here -->
-                <div class="chip skeleton"></div>
-                <div class="chip skeleton"></div>
-                <div class="chip skeleton"></div>
+            <div id="categoryGroup" class="filter-group" hidden>
+                <span class="section-label">Smart Categories</span>
+                <div id="categoryList" class="chips-container category-chips">
+                    <!-- Category pills injected here: 📚 Books, 🎬 Videos, etc. -->
+                </div>
+            </div>
+            <div class="filter-group">
+                <span class="section-label">Formats</span>
+                <div id="extList" class="chips-container">
+                    <!-- Chips injected here -->
+                    <div class="chip skeleton"></div>
+                    <div class="chip skeleton"></div>
+                    <div class="chip skeleton"></div>
+                </div>
             </div>
         </div>
 
@@ -74,6 +82,17 @@
                     <button id="selectNoneBtn" class="text-btn">None</button>
                 </div>
             </div>
+
+            <!-- Instant Search Filter -->
+            <div class="list-search-wrapper">
+                <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="filterInput" class="filter-input" placeholder="Filter files by title or name..." autocomplete="off">
+                <button id="clearFilterBtn" class="clear-filter-btn" hidden title="Clear filter">✕</button>
+            </div>
+
             <div id="downloadsListWrapper" class="items-list custom-scrollbar">
                 <!-- Items injected here -->
             </div>
@@ -86,6 +105,12 @@
         <div class="view-header">
             <h2>Downloading...</h2>
             <button id="newSearchBtn" class="btn btn-sm btn-outline">Back</button>
+        </div>
+
+        <!-- Download Control Actions (Pause/Resume/Cancel All) -->
+        <div class="download-control-actions">
+            <button id="pauseResumeAllBtn" class="btn btn-sm btn-secondary">⏸ Pause All</button>
+            <button id="cancelAllBtn" class="btn btn-sm btn-secondary" style="color: #ef4444;">✕ Cancel All</button>
         </div>
 
         <!-- Error Actions (Hidden by default) -->

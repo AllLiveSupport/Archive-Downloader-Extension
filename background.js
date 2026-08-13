@@ -38,7 +38,7 @@ const dataTemplate = {
 	isSearch: false,
 	isUserProfile: false,
 	allParams: {}
-}
+};
 
 function _copyObject(obj) {
 	return JSON.parse(JSON.stringify(obj));
@@ -50,6 +50,91 @@ function clearData(tabId) {
 
 const sleep = (ms) => new Promise(resolve => setTimeout(resolve, ms));
 
+// Storage persistence helpers
+const saveScanState = async (tabId) => {
+	const data = tabs[tabId];
+	if (!data) return;
+	try {
+		const snapshot = {
+			tabId: data.tabId,
+			pageHref: data.pageHref,
+			collectionIdentifier: data.collectionIdentifier,
+			isSingleItem: data.isSingleItem,
+			isSearch: data.isSearch,
+			isUserProfile: data.isUserProfile,
+			allParams: data.allParams,
+			results: data.results || [],
+			extensions: data.extensions || [],
+			articles: data.articles || [],
+			loop: data.loop || 0,
+			max: data.max || 0,
+			scanDone: data.scanDone || false,
+			isFetchingIdentifiers: data.isFetchingIdentifiers || false,
+			isProcessingArticles: data.isProcessingArticles || false,
+			downloadStatus: data.downloadStatus || 0,
+			downloadProgressData: data.downloadProgressData || []
+		};
+		await chrome.storage.local.set({ [`archive_scan_${tabId}`]: snapshot });
+	} catch (e) {
+		console.warn('saveScanState error:', e);
+	}
+};
+
+let saveTimeouts = {};
+const saveScanStateDebounced = (tabId) => {
+	if (saveTimeouts[tabId]) clearTimeout(saveTimeouts[tabId]);
+	saveTimeouts[tabId] = setTimeout(() => {
+		saveScanState(tabId);
+	}, 200);
+};
+
+const loadScanState = async (tabId) => {
+	try {
+		const key = `archive_scan_${tabId}`;
+		const res = await chrome.storage.local.get(key);
+		if (res && res[key]) {
+			tabs[tabId] = {
+				..._copyObject(dataTemplate),
+				...res[key],
+				isProcessingArticles: false
+			};
+			return tabs[tabId];
+		}
+	} catch (e) {
+		console.warn('loadScanState error:', e);
+	}
+	return null;
+};
+
+const clearScanState = async (tabId) => {
+	delete tabs[tabId];
+	try {
+		await chrome.storage.local.remove(`archive_scan_${tabId}`);
+	} catch (e) {
+		// Ignore
+	}
+};
+
+let keepAliveInterval = null;
+function ensureKeepAlive() {
+	if (keepAliveInterval) return;
+	keepAliveInterval = setInterval(() => {
+		const isAnyActive = Object.values(tabs).some(t =>
+			(t.isProcessingArticles && !t.scanDone) ||
+			t.isFetchingIdentifiers ||
+			(t.downloadStatus === 1)
+		);
+		if (!isAnyActive) {
+			clearInterval(keepAliveInterval);
+			keepAliveInterval = null;
+			return;
+		}
+		try {
+			chrome.runtime.getPlatformInfo(() => {});
+		} catch (e) {}
+	}, 10000);
+}
+
 // Manifest V3 için declarativeContent yerine action.onClicked kullanıyoruz
 chrome.action.onClicked.addListener(function (tab) {
 	if (tab.url && tab.url.includes('archive.org')) {
@@ -57,39 +142,49 @@ chrome.action.onClicked.addListener(function (tab) {
 	}
 });
 
+const scanAbortControllers = {};
+
 chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 	let data;
 	switch (message.action) {
 		case 'startFetching':
-			// Modern projenin mantığıyla çalış
+			if (scanAbortControllers[message.tabId]) {
+				try { scanAbortControllers[message.tabId].abort(); } catch (e) {}
+			}
+			scanAbortControllers[message.tabId] = new AbortController();
+
 			tabs[message.tabId] = _copyObject(dataTemplate);
 			data = tabs[message.tabId];
 			data.tabId = message.tabId;
-			data.pageHref = message.url; // Critical: Set this to prevent onUpdated from deleting data
+			data.pageHref = message.url;
 			data.collectionIdentifier = message.collectionIdentifier;
 			data.isSingleItem = message.isSingleItem || false;
 			data.isSearch = message.isSearch || false;
 			data.isUserProfile = message.isUserProfile || false;
+			data.visibleIdentifiers = message.visibleIdentifiers || [];
 			data.allParams = message.allParams || {};
 			data.scanDone = false;
-
-			// Clear old results
 			data.results = [];
 			data.extensions = [];
 			data.loop = 0;
 			data.max = 0;
 
-			// Start API data fetching
+			saveScanState(message.tabId);
+			ensureKeepAlive();
+
 			if (!data.isFetchingIdentifiers) {
 				fetchAllItemIdentifiers(message.tabId);
 			}
 			break;
-		// cases SCAN_PAGE and NEXT_PAGE removed as legacy code
+
 		case 'stopFetching':
+			if (scanAbortControllers[message.tabId]) {
+				try { scanAbortControllers[message.tabId].abort(); } catch (e) {}
+			}
 			if (tabs[message.tabId]) {
 				tabs[message.tabId].scanDone = true;
-				// Clear any pending articles to stop processing
 				tabs[message.tabId].articles = [];
+				saveScanState(message.tabId);
 				sendMessageSafe({
 					action: 'updateProgress',
 					message: `Scan stopped by user. ${tabs[message.tabId].loop} items processed.`,
@@ -97,58 +192,97 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 				});
 			}
 			break;
+
 		case 'startDownload':
 			if (tabs[message.tabId]) {
 				startDownload(message.tabId, message.data);
+				ensureKeepAlive();
 			}
 			break;
+
+		case 'clearScanState':
+			if (scanAbortControllers[message.tabId]) {
+				try { scanAbortControllers[message.tabId].abort(); } catch (e) {}
+			}
+			clearScanState(message.tabId);
+			break;
+
 		case 'getDownloadProgress':
-			if (tabs[message.tabId]) {
-				sendResponse({ progress: getDownloadProgress(message.tabId) });
-			} else {
-				sendResponse({ progress: [] });
-			}
+			(async () => {
+				let data = tabs[message.tabId];
+				if (!data) data = await loadScanState(message.tabId);
+				if (data) {
+					sendResponse({ progress: getDownloadProgress(message.tabId) });
+				} else {
+					sendResponse({ progress: [] });
+				}
+			})();
 			return true;
 			break;
+
 		case 'getDownloadStatus':
-			if (tabs[message.tabId]) {
-				sendResponse({ status: getDownloadStatus(message.tabId) });
-			} else {
-				sendResponse({ status: DOWNLOAD_STATUS.unknown });
-			}
+			(async () => {
+				let data = tabs[message.tabId];
+				if (!data) data = await loadScanState(message.tabId);
+				if (data) {
+					sendResponse({ status: getDownloadStatus(message.tabId) });
+				} else {
+					sendResponse({ status: DOWNLOAD_STATUS.unknown });
+				}
+			})();
 			return true;
 			break;
+
 		case 'resetStatus':
 			if (tabs[message.tabId]) {
 				resetStatus(message.tabId);
-				// Also clear the tab data for a fresh start
-				clearData(message.tabId);
 			}
+			clearScanState(message.tabId);
 			break;
+
 		case 'getExtensions':
-			if (tabs[message.tabId]) {
-				sendResponse({ extensions: getExtensions(message.tabId) });
-			} else {
-				sendResponse({ extensions: [] });
-			}
+			(async () => {
+				let data = tabs[message.tabId];
+				if (!data) data = await loadScanState(message.tabId);
+				if (data) {
+					sendResponse({ extensions: getExtensions(message.tabId) });
+				} else {
+					sendResponse({ extensions: [] });
+				}
+			})();
 			return true;
 			break;
+
 		case 'getResults':
-			if (tabs[message.tabId]) {
-				const data = tabs[message.tabId];
-				sendResponse({
-					results: data.results || [],
-					scanDone: data.scanDone || false,
-					isFetchingIdentifiers: data.isFetchingIdentifiers || false,
-					current: data.loop || 0,
-					max: data.max || 0,
-					downloadStatus: data.downloadStatus || 0
-				});
-			} else {
-				sendResponse({ results: [], scanDone: true });
-			}
+			(async () => {
+				let data = tabs[message.tabId];
+				if (!data) {
+					data = await loadScanState(message.tabId);
+				}
+				if (data) {
+					// Resume background scanning if it was suspended mid-scan
+					if (!data.scanDone && data.articles && data.articles.length > 0 && (data.loop < data.max)) {
+						startProcessingArticles(message.tabId);
+					}
+					sendResponse({
+						exists: true,
+						pageHref: data.pageHref || '',
+						results: data.results || [],
+						extensions: data.extensions || [],
+						scanDone: data.scanDone || false,
+						isFetchingIdentifiers: data.isFetchingIdentifiers || false,
+						isProcessingArticles: data.isProcessingArticles || false,
+						current: data.loop || 0,
+						max: data.max || 0,
+						downloadStatus: data.downloadStatus || 0
+					});
+				} else {
+					sendResponse({ exists: false, results: [], extensions: [], scanDone: true });
+				}
+			})();
 			return true;
 			break;
+
 		case 'retryFailedDownloads':
 			if (tabs[message.tabId]) {
 				const data = tabs[message.tabId];
@@ -166,17 +300,12 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 				}
 
 				if (retriedCount > 0) {
-					// Ensure status is back to started so the loop continues/restarts checks
 					data.downloadStatus = DOWNLOAD_STATUS.started;
-
-					// Clear existing interval if any (just to be safe)
 					if (data.interval) clearInterval(data.interval);
-
-					// Restart check loop
 					data.interval = setInterval(function () {
 						_checkDownloads(message.tabId);
 					}, 1000);
-
+					ensureKeepAlive();
 					sendResponse({ count: retriedCount });
 				} else {
 					sendResponse({ count: 0 });
@@ -184,56 +313,109 @@ chrome.runtime.onMessage.addListener(function (message, sender, sendResponse) {
 			}
 			return true;
 			break;
-		case 'getProgress':
+
+		case 'pauseDownloads':
 			if (tabs[message.tabId]) {
 				const data = tabs[message.tabId];
-				sendResponse({
-					current: data.loop || 0,
-					max: data.max || 0,
-					scanDone: data.scanDone || false,
-					isFetchingIdentifiers: data.isFetchingIdentifiers || false
-				});
-			} else {
-				sendResponse({ current: 0, max: 0, scanDone: true });
+				data.isPaused = true;
+				if (data.downloadProgressData) {
+					data.downloadProgressData.forEach(item => {
+						if ((item.state === STATE.in_progress || item.state === 'starting') && item.id) {
+							try {
+								chrome.downloads.pause(item.id, () => {});
+								item.state = 'paused';
+							} catch (e) {}
+						}
+					});
+				}
+				sendResponse({ success: true });
 			}
+			return true;
+			break;
+
+		case 'resumeDownloads':
+			if (tabs[message.tabId]) {
+				const data = tabs[message.tabId];
+				data.isPaused = false;
+				if (data.downloadProgressData) {
+					data.downloadProgressData.forEach(item => {
+						if (item.state === 'paused' && item.id) {
+							try {
+								chrome.downloads.resume(item.id, () => {});
+								item.state = STATE.in_progress;
+							} catch (e) {}
+						}
+					});
+				}
+				_checkDownloads(message.tabId);
+				sendResponse({ success: true });
+			}
+			return true;
+			break;
+
+		case 'cancelDownloads':
+			if (tabs[message.tabId]) {
+				const data = tabs[message.tabId];
+				data.isPaused = false;
+				if (data.interval) clearInterval(data.interval);
+				if (data.downloadProgressData) {
+					data.downloadProgressData.forEach(item => {
+						if ((item.state === STATE.in_progress || item.state === 'paused' || item.state === 'starting') && item.id) {
+							try {
+								chrome.downloads.cancel(item.id, () => {});
+							} catch (e) {}
+						}
+						item.state = STATE.canceled;
+					});
+				}
+				data.downloadStatus = DOWNLOAD_STATUS.unknown;
+				sendResponse({ success: true });
+			}
+			return true;
+			break;
+
+		case 'getProgress':
+			(async () => {
+				let data = tabs[message.tabId];
+				if (!data) data = await loadScanState(message.tabId);
+				if (data) {
+					sendResponse({
+						current: data.loop || 0,
+						max: data.max || 0,
+						scanDone: data.scanDone || false,
+						isFetchingIdentifiers: data.isFetchingIdentifiers || false
+					});
+				} else {
+					sendResponse({ current: 0, max: 0, scanDone: true });
+				}
+			})();
 			return true;
 			break;
 	}
 });
 
-chrome.tabs.onUpdated.addListener(function (tabId, change, tab) {
-	if (change.status === 'loading') {
-		// Yalnızca Archive.org dışına çıkılırsa veya ID değişirse veriyi sil
-		if (tabs[tabId] && change.url) {
-			try {
-				const oldUrl = tabs[tabId].pageHref;
-				const newUrl = change.url;
+chrome.tabs.onUpdated.addListener(async function (tabId, change, tab) {
+	const currentUrl = (change.url || (tab && tab.url) || '').replace(/\/+$/, '').split('#')[0];
+	if (!currentUrl) return;
 
-				// ID'leri karşılaştır (details/ID veya download/ID)
-				const getID = (u) => {
-					const m = u.match(/(details|download)\/([^/?#]+)/);
-					return m ? m[2] : null;
-				};
-
-				const oldID = getID(oldUrl);
-				const newID = getID(newUrl);
-
-				if (!newUrl.includes('archive.org') || (oldID && newID && oldID !== newID)) {
-					console.log('Clearing data for tabId:', tabId, 'due to navigation to:', newUrl);
-					delete tabs[tabId];
-				}
-			} catch (e) {
-				// URL işlemede hata (dosya yolları vb.)
+	let data = tabs[tabId];
+	if (!data) {
+		data = await loadScanState(tabId);
+	}
+	if (data && data.pageHref) {
+		const oldUrl = data.pageHref.replace(/\/+$/, '').split('#')[0];
+		if (!currentUrl.includes('archive.org') || oldUrl !== currentUrl) {
+			console.log('Clearing data for tabId:', tabId, 'due to URL change from', oldUrl, 'to', currentUrl);
+			if (scanAbortControllers[tabId]) {
+				try { scanAbortControllers[tabId].abort(); } catch (e) {}
 			}
+			clearScanState(tabId);
 		}
 	}
 });
 
 chrome.tabs.onRemoved.addListener((tabId) => {
-	if (tabs[tabId]) {
-		console.log('Clearing data for tabId:', tabId, 'due to tab closure');
-		delete tabs[tabId];
-	}
+	clearScanState(tabId);
 });
 
 // Manifest V3'te getViews yerine farklı bir yaklaşım kullanıyoruz
@@ -241,6 +423,89 @@ function getPopup() {
 	// Manifest V3'te popup view'larına doğrudan erişim yok
 	// Bunun yerine message passing kullanıyoruz
 	return null;
+}
+
+const LANGUAGE_CODES = {
+	'japanese': 'jpn',
+	'middle dutch': 'dum',
+	'dutch': 'dut',
+	'turkish': 'tur',
+	'english': 'eng',
+	'german': 'ger',
+	'french': 'fre',
+	'spanish': 'spa',
+	'italian': 'ita',
+	'russian': 'rus',
+	'arabic': 'ara',
+	'chinese': 'chi',
+	'portuguese': 'por',
+	'latin': 'lat',
+	'greek': 'gre',
+	'hebrew': 'heb',
+	'persian': 'per',
+	'swedish': 'swe',
+	'polish': 'pol',
+	'korean': 'kor',
+	'hindi': 'hin'
+};
+
+function buildFacetQuery(rawFilters, collectionIdentifier) {
+	if (!rawFilters) return '';
+	const filterList = Array.isArray(rawFilters) ? rawFilters : [rawFilters];
+	const fieldGroups = {};
+	const freeTexts = [];
+
+	filterList.forEach(f => {
+		if (!f) return;
+		let clean = f.replace(/~/g, ' ').replace(/\+/g, ' ').trim();
+		if (clean.startsWith('-')) clean = clean.substring(1).trim();
+
+		const m = clean.match(/^([^:]+):"(.+)"$/) || clean.match(/^([^:]+):'(.+)'$/) || clean.match(/^([^:]+):(.+)$/);
+		if (m) {
+			const field = m[1].trim();
+			let val = m[2].replace(/^['"]+|['"]+$/g, '').trim();
+
+			if (field === 'mediatype' && val.toLowerCase() === (collectionIdentifier || '').toLowerCase() && !filterList.some(x => x.includes('mediatype') && !x.includes(val))) {
+				return;
+			}
+
+			if (!fieldGroups[field]) fieldGroups[field] = [];
+			if (!fieldGroups[field].includes(val)) fieldGroups[field].push(val);
+		} else {
+			if (!freeTexts.includes(clean)) freeTexts.push(clean);
+		}
+	});
+
+	const clauseParts = [];
+
+	for (const [field, values] of Object.entries(fieldGroups)) {
+		if (values.length === 1) {
+			const val = values[0];
+			if (field === 'language') {
+				const iso = LANGUAGE_CODES[val.toLowerCase()];
+				if (iso) clauseParts.push(`(language:"${val}" OR language:${iso} OR "${val}")`);
+				else clauseParts.push(`(language:"${val}" OR "${val}")`);
+			} else {
+				clauseParts.push(`${field}:"${val}"`);
+			}
+		} else {
+			const orItems = values.map(val => {
+				if (field === 'language') {
+					const iso = LANGUAGE_CODES[val.toLowerCase()];
+					if (iso) return `(language:"${val}" OR language:${iso})`;
+					return `language:"${val}"`;
+				}
+				return `${field}:"${val}"`;
+			});
+			clauseParts.push(`(${orItems.join(' OR ')})`);
+		}
+	}
+
+	if (freeTexts.length > 0) {
+		clauseParts.push(`(${freeTexts.map(t => `"${t}"`).join(' OR ')})`);
+	}
+
+	return clauseParts.join(' AND ');
 }
 
 // New API-based functions
@@ -251,42 +516,73 @@ const fetchAllItemIdentifiers = async (tabId) => {
 		return;
 	}
 
-	// First, check if this is a Search Page or User Profile scan
-	if (data.isSearch || data.isUserProfile) {
-		// It's a search page or user profile, skip metadata and go straight to search
+	const TOP_LEVEL_MEDIATYPES = new Set(['texts', 'movies', 'audio', 'software', 'image', 'etree', 'web']);
+	const isTopLevel = TOP_LEVEL_MEDIATYPES.has(data.collectionIdentifier);
+	const hasFilterParams = data.allParams && (data.allParams['and[]'] || data.allParams['and'] || data.allParams.query || data.allParams.q);
+
+	// Check if this is a Search Page, User Profile, Top-Level category, or Filtered collection scan
+	if (data.isSearch || data.isUserProfile || isTopLevel || hasFilterParams) {
 		let query = '';
 		
 		if (data.isUserProfile) {
-			// Step 1: Probe for an item to find the actual uploader string (handle or email)
-			// We search for the literal handle string as a keyword
-			const handleKeyword = data.collectionIdentifier; // e.g. "@tarihvemedeniyet_org"
-			const probeUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(handleKeyword)}&fl[]=identifier&rows=1&output=json`;
+			const cleanHandle = data.collectionIdentifier.replace(/^@/, '');
 			
-			try {
-				const probeResp = await fetch(probeUrl);
-				const probeData = await probeResp.json();
-				if (probeData.response && probeData.response.docs && probeData.response.docs.length > 0) {
-					const firstItemId = probeData.response.docs[0].identifier;
-					// Fetch metadata for this item to extract the REAL uploader value
-					const metaResp = await fetch(`https://archive.org/metadata/${firstItemId}`);
-					const metaData = await metaResp.json();
-					if (metaData.metadata && metaData.metadata.uploader) {
-						// Success! We found the uploader identifier (could be email or handle)
-						query = `uploader:("${metaData.metadata.uploader}")`;
-						console.log(`Profile probe found uploader: ${metaData.metadata.uploader}`);
-					}
+			// Priority 1: Check if visibleIdentifiers from the active page gives the exact uploader account
+			if (data.visibleIdentifiers && data.visibleIdentifiers.length > 0) {
+				for (const id of data.visibleIdentifiers) {
+					try {
+						const metaResp = await fetch(`https://archive.org/metadata/${id}`);
+						const metaData = await metaResp.json();
+						if (metaData && metaData.metadata && metaData.metadata.uploader && metaData.metadata.uploader !== 'user-admin@archive.org') {
+							query = `uploader:("${metaData.metadata.uploader}")`;
+							console.log(`Profile uploader resolved from page item: ${metaData.metadata.uploader}`);
+							break;
+						}
+					} catch (e) {}
 				}
-			} catch (e) {
-				console.warn("Profile probe search failed:", e);
 			}
 
-			// Fallback if probe failed or handle wasn't found in uploader field
+			// Priority 2: Direct check for uploader or creator with handle
 			if (!query) {
-				query = `uploader:("${data.collectionIdentifier}") OR creator:("${data.collectionIdentifier}") OR "${data.collectionIdentifier}"`;
+				let uploaderQuery = `(uploader:"${data.collectionIdentifier}" OR uploader:"${cleanHandle}" OR creator:"${data.collectionIdentifier}" OR creator:"${cleanHandle}")`;
+				try {
+					const testResp = await fetch(`https://archive.org/advancedsearch.php?q=${encodeURIComponent(uploaderQuery)}&rows=1&output=json`);
+					const testData = await testResp.json();
+					if (testData.response && testData.response.numFound > 0) {
+						query = uploaderQuery;
+					}
+				} catch (e) {}
 			}
+
+			// Priority 3: Check favorites collection for real account username
+			if (!query) {
+				try {
+					const favResp = await fetch(`https://archive.org/metadata/fav-${cleanHandle}`);
+					const favData = await favResp.json();
+					if (favData.metadata && favData.metadata.title) {
+						const username = favData.metadata.title.replace(/\s+Favorites$/i, '').trim();
+						if (username && username !== 'archive.org Member') {
+							query = `(uploader:"*${username}*" OR creator:"*${username}*" OR "${username}")`;
+						}
+					}
+				} catch (e) {}
+			}
+
+			if (!query) {
+				query = `"${data.collectionIdentifier}" OR "${cleanHandle}"`;
+			}
+		} else if (isTopLevel) {
+			query = `mediatype:(${data.collectionIdentifier})`;
 		} else {
-			if (data.allParams.query) query = data.allParams.query; // URL param 'query'
-			else if (data.allParams.q) query = data.allParams.q;     // URL param 'q' (advanced)
+			if (data.allParams.query) {
+				const qVal = data.allParams.query;
+				query = `("${qVal}" OR ${qVal})`;
+			} else if (data.allParams.q) {
+				const qVal = data.allParams.q;
+				query = `("${qVal}" OR ${qVal})`;
+			} else if (data.collectionIdentifier) {
+				query = `collection:(${data.collectionIdentifier})`;
+			}
 		}
 
 		if (!query) {
@@ -299,42 +595,14 @@ const fetchAllItemIdentifiers = async (tabId) => {
 		let startPage = 1;
 		if (data.allParams.page) startPage = parseInt(data.allParams.page, 10) || 1;
 
-		// APPEND FILTERS: archive.org uses 'and[]' for facets
+		// APPEND FILTERS: universal buildFacetQuery groups facets by field and handles multi-select OR logic
 		const filters = data.allParams['and[]'] || data.allParams['and'];
-		const filterParts = [];
-
-		if (filters) {
-			const filterList = Array.isArray(filters) ? filters : [filters];
-			const groups = {};
-
-			filterList.forEach(f => {
-				if (!f) return;
-				const match = f.match(/^([^:]+):"(.+)"$/) || f.match(/^([^:]+):(.+)$/);
-				if (match) {
-					const field = match[1];
-					const value = match[2];
-					if (!groups[field]) groups[field] = [];
-					groups[field].push(`"${value}"`);
-				} else {
-					filterParts.push(f);
-				}
-			});
-
-			for (const field in groups) {
-				const values = groups[field];
-				if (values.length > 1) {
-					filterParts.push(`(${values.map(v => `${field}:${v}`).join(' OR ')})`);
-				} else {
-					filterParts.push(`${field}:${values[0]}`);
-				}
-			}
-		}
+		const facetQuery = buildFacetQuery(filters, data.collectionIdentifier);
 
 		// Final query assembly
 		let finalQuery = query;
-		if (filterParts.length > 0) {
-			const filterString = filterParts.join(' AND ');
-			finalQuery = finalQuery ? `(${finalQuery}) AND (${filterString})` : filterString;
+		if (facetQuery) {
+			finalQuery = finalQuery ? `(${finalQuery}) AND (${facetQuery})` : facetQuery;
 		}
 
 		if (!finalQuery) {
@@ -367,46 +635,47 @@ const fetchAllItemIdentifiers = async (tabId) => {
 
 	if (mediatype === 'collection') {
 		// If collection, fetch all items using advancedsearch
-		let query = '';
-		if (data.allParams && data.allParams.q) {
-			query = data.allParams.q;
-		} else {
-			let queryParts = [`collection:(${data.collectionIdentifier})`];
-			for (const key in data.allParams) {
-				if (key === 'q' || key === 'page' || key === 'sort') continue;
-				let value = data.allParams[key];
-				if (!Array.isArray(value)) value = [value];
-				value.forEach(val => {
-					if (key.endsWith('[]')) {
-						queryParts.push(val);
-					} else {
-						queryParts.push(`${key}:"${val}"`);
-					}
-				});
-			}
-			query = queryParts.join(' AND ');
-		}
-
+		let query = `collection:(${data.collectionIdentifier})`;
 		let sortStr = data.allParams['sort[]'] || data.allParams['sort'];
 		performAdvancedSearch(tabId, query, 1, sortStr);
 
 	} else {
-		// If single item, just process it
-		data.articles = [{
-			url: `https://archive.org/details/${data.collectionIdentifier}`,
-			title: data.collectionIdentifier
-		}];
-		data.max = 1;
-		sendMessageSafe({
-			action: 'updateProgress',
-			message: `Processing item: ${data.collectionIdentifier}...`,
-			tabId: tabId
+		// If single item, extract all logical file groups from metadata
+		const results = extractResultsFromMetadata(meta, tabId, `https://archive.org/details/${data.collectionIdentifier}`, data.collectionIdentifier);
+
+		if (results.length === 0) {
+			sendMessageSafe({ action: 'scanComplete', message: 'No downloadable files found.', tabId: tabId, totalResults: 0 });
+			data.scanDone = true;
+			return;
+		}
+
+		data.results = results;
+		data.max = results.length;
+		data.loop = results.length;
+		data.scanDone = true;
+
+		updateExtensionPercentages(tabId);
+
+		// Send progress updates to popup
+		results.forEach((res, idx) => {
+			sendMessageSafe({
+				action: 'updateProgress',
+				message: `Scanning archive: ${idx + 1} / ${results.length}...`,
+				tabId: tabId,
+				newResult: res,
+				resultIndex: idx,
+				current: idx + 1,
+				max: results.length,
+				totalDiscovered: results.length
+			});
 		});
 
-		// Start processing
-		if (data.articles.length > 0) {
-			processOneArticle(tabId);
-		}
+		sendMessageSafe({
+			action: 'scanComplete',
+			message: `Scan completed! ${results.length} items found.`,
+			tabId: tabId,
+			totalResults: results.length
+		});
 	}
 };
 
@@ -414,16 +683,17 @@ const performAdvancedSearch = async (tabId, query, startPage = 1, sortStr = null
 	const data = tabs[tabId];
 	if (!data || data.isFetchingIdentifiers) return;
 
+	const signal = scanAbortControllers[tabId] ? scanAbortControllers[tabId].signal : null;
 	data.isFetchingIdentifiers = true;
 	let page = startPage, totalFetched = 0, totalFound = 0;
-	let currentDelay = 200; // Dynamic delay for rate limiting
+	let currentDelay = 100;
+	const pageSize = 1000;
+
 	do {
-		if (data.scanDone) break;
+		if (data.scanDone || (signal && signal.aborted)) break;
 
-		// Ensure we request JSON output
-		let apiUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&rows=500&page=${page}&output=json`;
+		let apiUrl = `https://archive.org/advancedsearch.php?q=${encodeURIComponent(query)}&fl[]=identifier&rows=${pageSize}&page=${page}&output=json`;
 
-		// Add sorting if provided
 		if (sortStr) {
 			if (Array.isArray(sortStr)) {
 				sortStr.forEach(s => apiUrl += `&sort[]=${encodeURIComponent(s)}`);
@@ -435,7 +705,7 @@ const performAdvancedSearch = async (tabId, query, startPage = 1, sortStr = null
 		console.log('Background: API URL is', apiUrl);
 
 		try {
-			const response = await fetch(apiUrl);
+			const response = await fetch(apiUrl, { signal: signal || undefined });
 			if (!response.ok) {
 				if (response.status === 429 || response.status === 503) {
 					console.warn(`Archive API Rate Limit (${response.status}). Backing off...`);
@@ -447,14 +717,13 @@ const performAdvancedSearch = async (tabId, query, startPage = 1, sortStr = null
 						tabId: tabId
 					});
 					await sleep(currentDelay);
-					continue; // Retry the same page
+					continue;
 				}
 				throw new Error(`Could not fetch info: ${response.status}`);
 			}
 			
-			// Success - gradually reduce delay back to normal
-			if (currentDelay > 200) {
-				currentDelay = Math.max(200, currentDelay - 500);
+			if (currentDelay > 100) {
+				currentDelay = Math.max(100, currentDelay - 200);
 			}
 
 			const apiData = await response.json();
@@ -465,178 +734,395 @@ const performAdvancedSearch = async (tabId, query, startPage = 1, sortStr = null
 				if (totalFound === 0) {
 					sendMessageSafe({ action: 'scanComplete', message: 'No items found.', tabId: tabId, totalResults: 0 });
 					data.scanDone = true;
+					data.isFetchingIdentifiers = false;
 					return;
 				}
 			}
 
 			const identifiers = apiData.response.docs.map(doc => doc.identifier);
+			if (identifiers.length === 0) break;
+
 			data.articles = data.articles.concat(identifiers.map(id => ({
 				url: `https://archive.org/details/${id}`,
 				title: id
 			})));
 
 			totalFetched += identifiers.length;
+			data.max = totalFound;
+			saveScanState(tabId);
 			sendMessageSafe({
 				action: 'updateProgress',
-				message: `Found ${totalFound} total items. ${totalFetched} added to list...`,
+				message: `Discovered ${totalFetched} / ${totalFound} items...`,
 				tabId: tabId
 			});
 
 			page++;
 			await sleep(currentDelay);
 
-			// Start processing immediately if not already doing so
-			if (data.articles.length > 0 && data.activeProcesCnt === 0) {
-				processOneArticle(tabId);
-			}
-
 		} catch (e) {
+			if (signal && signal.aborted) return;
 			console.error("Search error:", e);
 			sendMessageSafe({ action: 'error', message: 'Search failed.' });
 			data.scanDone = true;
+			data.isFetchingIdentifiers = false;
+			saveScanState(tabId);
 			break;
 		}
-	} while (totalFetched < totalFound && page < startPage + 1 && !data.scanDone);
+	} while (totalFetched < totalFound && !data.scanDone && !(signal && signal.aborted));
+
+	data.isFetchingIdentifiers = false;
+	data.max = data.articles.length;
+	saveScanState(tabId);
+
+	if (data.articles.length > 0 && !data.scanDone && !(signal && signal.aborted)) {
+		startProcessingArticles(tabId);
+	}
 };
 
-const processOneArticle = function (tabId) {
-	let data = tabs[tabId];
-	if (!data || !data.articles) {
-		console.error('Data or articles not found for tabId:', tabId);
-		return;
+const fetchWithTimeout = async (url, options = {}, timeoutMs = 7000, externalSignal = null) => {
+	const controller = new AbortController();
+	const id = setTimeout(() => controller.abort(), timeoutMs);
+
+	if (externalSignal) {
+		externalSignal.addEventListener('abort', () => controller.abort(), { once: true });
 	}
 
-	// Stop scan check - early exit if scan is stopped
-	if (data.scanDone) {
-		sendMessageSafe({
-			action: 'scanComplete',
-			message: `Scan stopped by user. Total ${data.loop} items processed.`,
-			tabId: tabId,
-			totalResults: data.loop
-		});
-		return;
+	try {
+		const res = await fetch(url, { ...options, signal: controller.signal });
+		clearTimeout(id);
+		return res;
+	} catch (err) {
+		clearTimeout(id);
+		throw err;
 	}
+};
 
-	const article = data.articles.shift();
-	if (!article) {
-		// Sadece kuyruk gerçekten boşsa ve başka aktif işlem yoksa bitir
-		if (data.activeProcesCnt === 0) {
-			data.scanDone = true;
-			sendMessageSafe({
-				action: 'scanComplete',
-				message: `Scan completed. Total ${data.loop} items processed.`,
-				tabId: tabId,
-				totalResults: data.loop
-			});
+const fetchMetadataWithRetry = async (identifier, retries = 4, signal = null) => {
+	const url = `https://archive.org/metadata/${identifier}`;
+	for (let i = 0; i <= retries; i++) {
+		if (signal && signal.aborted) return null;
+		try {
+			const res = await fetchWithTimeout(url, {}, 15000, signal);
+			if (!res.ok) {
+				if ((res.status === 429 || res.status >= 500) && i < retries) {
+					await sleep(1000 * Math.pow(2, i));
+					continue;
+				}
+				throw new Error(`HTTP ${res.status}`);
+			}
+			return await res.json();
+		} catch (err) {
+			if (signal && signal.aborted) return null;
+			if (i === retries) {
+				console.warn(`Metadata fetch failed after ${retries} retries for ${identifier}:`, err.message);
+				return null;
+			}
+			await sleep(1000 * Math.pow(2, i));
 		}
+	}
+	return null;
+};
+
+const startProcessingArticles = async function (tabId) {
+	const data = tabs[tabId];
+	if (!data || data.isProcessingArticles) return;
+
+	const signal = scanAbortControllers[tabId] ? scanAbortControllers[tabId].signal : null;
+	data.isProcessingArticles = true;
+	ensureKeepAlive();
+	saveScanState(tabId);
+
+	const CONCURRENCY = 4;
+	let articleIndex = data.loop || 0;
+
+	const worker = async () => {
+		while (articleIndex < data.articles.length && !data.scanDone && !(signal && signal.aborted)) {
+			const currentIndex = articleIndex++;
+			const article = data.articles[currentIndex];
+			if (!article || (signal && signal.aborted)) break;
+
+			const identifier = article.url.split('/details/')[1];
+
+			try {
+				const metadata = await fetchMetadataWithRetry(identifier, 4, signal);
+				if (metadata && metadata.files && metadata.files.length > 0 && !data.scanDone && !(signal && signal.aborted)) {
+					const results = extractResultsFromMetadata(metadata, tabId, article.url, article.title);
+					results.forEach(result => {
+						const resultIndex = data.results.length;
+						data.results.push(result);
+						sendMessageSafe({
+							action: 'updateProgress',
+							tabId: tabId,
+							newResult: result,
+							resultIndex: resultIndex,
+							current: data.loop + 1,
+							max: data.max,
+							totalDiscovered: data.results.length
+						});
+					});
+					updateExtensionPercentages(tabId);
+				} else if (!data.scanDone && !(signal && signal.aborted)) {
+					// Fallback: create direct download entry so item is NEVER lost
+					console.warn(`Using fallback direct entry for ${identifier}`);
+					const fallbackResult = {
+						title: article.title || identifier,
+						href: article.url,
+						downloadUrls: [{
+							url: `https://archive.org/download/${identifier}/${identifier}.mp4`,
+							name: `${identifier}.mp4`,
+							format: 'Video',
+							size: 'Unknown'
+						}, {
+							url: `https://archive.org/download/${identifier}/${identifier}_archive.torrent`,
+							name: `${identifier}_archive.torrent`,
+							format: 'Archive BitTorrent',
+							size: 'Unknown'
+						}],
+						extIndexes: []
+					};
+					const resultIndex = data.results.length;
+					data.results.push(fallbackResult);
+					sendMessageSafe({
+						action: 'updateProgress',
+						tabId: tabId,
+						newResult: fallbackResult,
+						resultIndex: resultIndex,
+						current: data.loop + 1,
+						max: data.max,
+						totalDiscovered: data.results.length
+					});
+					updateExtensionPercentages(tabId);
+				}
+			} catch (err) {
+				if (!(signal && signal.aborted)) {
+					console.warn(`Could not process metadata for ${identifier}:`, err.message);
+				}
+			} finally {
+				if (!(signal && signal.aborted)) {
+					data.loop++;
+					saveScanStateDebounced(tabId);
+					const fileText = data.results.length > data.loop ? ` (${data.results.length} files discovered)` : '';
+					sendMessageSafe({
+						action: 'updateProgress',
+						message: `Scanning: ${data.loop} / ${data.max} items...${fileText}`,
+						tabId: tabId,
+						current: data.loop,
+						max: data.max,
+						totalDiscovered: data.results.length
+					});
+				}
+			}
+
+			// Gentle stagger
+			await sleep(50);
+		}
+	};
+
+	const workers = Array(CONCURRENCY).fill(null).map(() => worker());
+	await Promise.all(workers);
+
+	if (signal && signal.aborted) {
 		return;
 	}
 
-	data.activeProcesCnt++;
+	data.scanDone = true;
+	data.isProcessingArticles = false;
 
-	// Fetch metadata via API
-	const identifier = article.url.split('/details/')[1];
-	const metadataUrl = `https://archive.org/metadata/${identifier}`;
+	updateExtensionPercentages(tabId);
+	saveScanState(tabId);
 
-	fetch(metadataUrl)
-		.then(res => res.json())
-		.then(metadata => {
-			if (!data || data.scanDone) {
-				console.log('Scan stopped or data not found during metadata processing for tabId:', tabId);
-				return;
-			}
+	sendMessageSafe({
+		action: 'scanComplete',
+		message: `Scan completed! ${data.max || data.loop} items scanned • ${data.results.length} files found.`,
+		tabId: tabId,
+		totalResults: data.results.length,
+		totalScanned: data.max || data.loop
+	});
+};
 
-			data.loop++;
-			data.activeProcesCnt--;
+const IGNORED_FORMATS = new Set([
+	'Metadata',
+	'JSON',
+	'Item Tile',
+	'JPEG Thumb',
+	'Archive Format',
+	'Thumbnail',
+	'Spectrogram',
+	'Log'
+]);
 
-			if (!metadata || !metadata.files) {
-				console.warn(`Metadata not found: ${identifier}`);
-				// Check scan status before continuing
-				if (!data.scanDone) {
-					processOneArticle(tabId);
-				}
-				return;
-			}
-
-			let downloadData = getDownloadUrlsFromMetadata(metadata, tabId);
-			let result = {
-				url: article.url,
-				title: article.title,
-				downloadUrls: downloadData.urls,
-				extIndexes: downloadData.indexes,
-				rendered: false
-			};
-
-			if (!data.results) {
-				data.results = [];
-			}
-			data.results.push(result);
-
-			// Update extension percentages
-			updateExtensionPercentages(tabId);
-
-			// Send update to popup - with detailed info
-			sendMessageSafe({
-				action: 'updateProgress',
-				message: `Scanning item: ${data.loop} / ${data.max}...`,
-				tabId: tabId,
-				newResult: result,
-				current: data.loop,
-				max: data.max
-			});
-
-			// Check if we should continue processing
-			if (data.scanDone || !data.articles || data.articles.length === 0 || data.activeProcesCnt >= MAX_ACTIVE_THREADS) {
-				if (data.scanDone) {
-					console.log('Scan stopped, not processing more articles');
-				}
-				return;
-			}
-			processOneArticle(tabId);
-		})
-		.catch(function (err) {
-			console.error(`Metadata error (${identifier}):`, err);
-			if (data) {
-				data.activeProcesCnt--;
-				// Only continue if scan is not stopped
-				if (!data.scanDone) {
-					processOneArticle(tabId);
-				}
-			}
-		});
-
-	// Only start new thread if scan is not stopped and we haven't reached max threads
-	if (data.activeProcesCnt >= MAX_ACTIVE_THREADS || data.scanDone) {
-		return;
-	}
-	processOneArticle(tabId);
+function isSystemFile(filename) {
+	if (!filename) return false;
+	const lower = filename.toLowerCase();
+	return lower.endsWith('_meta.xml') ||
+		lower.endsWith('_files.xml') ||
+		lower.endsWith('_meta.sqlite') ||
+		lower.endsWith('_reviews.xml') ||
+		lower.endsWith('_scandata.xml') ||
+		lower.endsWith('__ia_thumb.jpg') ||
+		lower.endsWith('_thumb.jpg') ||
+		lower.endsWith('_itemimage.jpg') ||
+		lower.endsWith('_itemimage.png') ||
+		lower.endsWith('_spectrogram.png') ||
+		lower.endsWith('.description') ||
+		lower.endsWith('.info.json') ||
+		lower.endsWith('_chocr.html.gz') ||
+		lower.endsWith('_hocr.html') ||
+		lower.endsWith('_hocr_pageindex.json.gz') ||
+		lower.endsWith('_hocr_searchtext.txt.gz') ||
+		lower.endsWith('_page_numbers.json') ||
+		lower.endsWith('.rules') ||
+		lower.endsWith('.md5') ||
+		lower.endsWith('.sum') ||
+		lower.includes('.thumbs/');
 }
 
-const getDownloadUrlsFromMetadata = function (metadata, tabId) {
-	const downloadUrls = [];
-	const extIndexes = [];
-
-	if (!metadata.files) {
-		return { urls: downloadUrls, indexes: extIndexes };
+const extractResultsFromMetadata = function (metadata, tabId, defaultUrl, defaultTitle) {
+	const results = [];
+	if (!metadata || !metadata.files || metadata.files.length === 0) {
+		return results;
 	}
 
-	metadata.files.forEach(file => {
+	const identifier = (metadata.metadata && metadata.metadata.identifier) || '';
+	const itemTitle = (metadata.metadata && metadata.metadata.title) || defaultTitle || identifier;
+	const files = metadata.files;
+	const fileMap = new Map();
+	files.forEach(f => fileMap.set(f.name, f));
+
+	function getRootOriginal(file) {
+		let curr = file;
+		let visited = new Set([curr.name]);
+		while (curr && curr.original && fileMap.has(curr.original)) {
+			if (visited.has(curr.original)) break;
+			visited.add(curr.original);
+			curr = fileMap.get(curr.original);
+		}
+		return curr ? curr.name : file.name;
+	}
+
+	// Filter and categorize files
+	const primaryMediaRoots = new Map();
+	const artworkFiles = [];
+	const torrentFiles = [];
+	const otherFiles = [];
+
+	const MEDIA_REGEX = /\.(mp4|mkv|webm|avi|mov|mpg|mpeg|m4v|ogv|vob|wmv|flv|3gp|ts|m2ts|flac|mp3|wav|ogg|m4a|aac|wma|opus|aiff|alac|mid|midi|ape|ac3|dts|shn|pdf|epub|mobi|djvu|cbr|cbz|azw3|fb2|txt|chm|docx|doc|rtf|odt|iso|bin|cue|img|dmg|rom|nes|sfc|smc|gba|gbc|gb|nds|n64|z64|exe|apk|zip|rar|7z|tar|gz|bz2|xz)$/i;
+
+	files.forEach(file => {
 		const format = file.format || 'Unknown';
-		if (format === 'Metadata' || format === 'JSON') return;
+		if (IGNORED_FORMATS.has(format)) return;
+		if (isSystemFile(file.name)) return;
 
-		const extension = updateExtensionsFromFile(file, tabId);
-		const extIdx = tabs[tabId].extensions.indexOf(extension);
+		if (format === 'Archive BitTorrent' || file.name.toLowerCase().endsWith('_archive.torrent')) {
+			torrentFiles.push(file);
+			return;
+		}
 
-		downloadUrls.push({
-			url: `https://archive.org/download/${metadata.metadata.identifier}/${encodeURIComponent(file.name)}`,
-			extIdx: extIdx,
-			size: file.size ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'Unknown'
-		});
-		extIndexes.push(extIdx);
+		if (format === 'Item Tile' || file.name.toLowerCase().endsWith('__ia_thumb.jpg')) {
+			return;
+		}
+
+		if (file.name.match(/\.(jpg|jpeg|png|webp|gif|bmp|tiff|tif|svg)$/i) && !file.original) {
+			artworkFiles.push(file);
+			return;
+		}
+
+		const rootName = getRootOriginal(file);
+		const base = rootName.replace(/\.[^/.]+$/, '');
+
+		if (MEDIA_REGEX.test(rootName) || MEDIA_REGEX.test(file.name)) {
+			if (!primaryMediaRoots.has(base)) {
+				primaryMediaRoots.set(base, []);
+			}
+			primaryMediaRoots.get(base).push(file);
+		} else {
+			otherFiles.push(file);
+		}
 	});
 
-	return { urls: downloadUrls, indexes: extIndexes };
-}
+	// If no primary media roots found (e.g. pure image collection or raw data), fallback artwork into roots
+	if (primaryMediaRoots.size === 0) {
+		artworkFiles.forEach(file => {
+			const rootName = getRootOriginal(file);
+			const base = rootName.replace(/\.[^/.]+$/, '');
+			if (!primaryMediaRoots.has(base)) primaryMediaRoots.set(base, []);
+			primaryMediaRoots.get(base).push(file);
+		});
+		artworkFiles.length = 0;
+	}
+
+	const groups = [];
+
+	if (primaryMediaRoots.size <= 1) {
+		// Single media item (1 song, 1 book, 1 video, 1 disk image, etc.):
+		// ALL files (audio derivatives, artwork covers, documents, torrents) belong to this 1 item
+		const allItemFiles = [];
+		for (const fileList of primaryMediaRoots.values()) {
+			allItemFiles.push(...fileList);
+		}
+		allItemFiles.push(...artworkFiles);
+		allItemFiles.push(...otherFiles);
+		allItemFiles.push(...torrentFiles);
+
+		if (allItemFiles.length > 0) {
+			groups.push({
+				title: itemTitle,
+				files: allItemFiles
+			});
+		}
+	} else {
+		// Multi-track / Multi-video / Multi-disc item:
+		// Create individual track rows
+		for (const [base, trackFiles] of primaryMediaRoots.entries()) {
+			const trackRoot = trackFiles[0];
+			let trackTitle = trackRoot.title || base.split('/').pop().replace(/_/g, ' ');
+			groups.push({
+				title: `${itemTitle} - ${trackTitle}`,
+				files: [...trackFiles, ...artworkFiles, ...otherFiles, ...torrentFiles]
+			});
+		}
+	}
+
+	for (const group of groups) {
+		const downloadUrls = [];
+		const extIndexes = [];
+		const addedUrls = new Set();
+
+		group.files.forEach(file => {
+			const encodedPath = file.name.split('/').map(encodeURIComponent).join('/');
+			const downloadUrl = `https://archive.org/download/${identifier}/${encodedPath}`;
+			if (addedUrls.has(downloadUrl)) return;
+			addedUrls.add(downloadUrl);
+
+			const extension = updateExtensionsFromFile(file, tabId);
+			const extIdx = tabs[tabId].extensions.indexOf(extension);
+
+			downloadUrls.push({
+				url: downloadUrl,
+				extIdx: extIdx,
+				size: file.size ? `${(file.size / (1024 * 1024)).toFixed(2)} MB` : 'Unknown',
+				name: file.name,
+				format: file.format
+			});
+
+			if (extIdx !== -1 && !extIndexes.includes(extIdx)) {
+				extIndexes.push(extIdx);
+			}
+		});
+
+		if (downloadUrls.length > 0) {
+			results.push({
+				url: defaultUrl || `https://archive.org/details/${identifier}`,
+				title: group.title,
+				downloadUrls: downloadUrls,
+				extIndexes: extIndexes,
+				rendered: false
+			});
+		}
+	}
+
+	return results;
+};
 
 const extEndings = [
 	"_daisy.zip",
@@ -758,22 +1244,26 @@ function startDownload(tabId, initialData) {
 	const downloadList = [];
 
 	initialData.forEach(item => {
-		// Verify indices
-		if (tab.results[item.resultIndex] &&
+		if (item.url) {
+			downloadList.push({
+				id: 0,
+				resultIndex: item.resultIndex,
+				extIndex: item.extIndex,
+				url: item.url,
+				state: STATE.ready,
+				totalBytes: 0,
+				bytesReceived: 0,
+				filename: decodeURIComponent(item.url.split('/').pop())
+			});
+		} else if (tab.results[item.resultIndex] &&
 			tab.results[item.resultIndex].downloadUrls) {
 
-			// FIX: Find the download URL that matches the requested extension ending
-			// This is more robust than relying on indices which might be out of sync
 			let downloadInfo = null;
-
 			if (item.extensionEnding) {
-				// Strict check using the string (e.g. ".pdf")
 				downloadInfo = tab.results[item.resultIndex].downloadUrls.find(u =>
 					u.url.toLowerCase().endsWith(item.extensionEnding.toLowerCase())
 				);
 			}
-
-			// Fallback to index if string check fails or wasn't provided (backward compatibility)
 			if (!downloadInfo) {
 				downloadInfo = tab.results[item.resultIndex].downloadUrls.find(u => u.extIdx === item.extIndex);
 			}
@@ -787,7 +1277,7 @@ function startDownload(tabId, initialData) {
 					state: STATE.ready,
 					totalBytes: 0,
 					bytesReceived: 0,
-					filename: downloadInfo.url.split('/').pop() // Info for debugging
+					filename: decodeURIComponent(downloadInfo.url.split('/').pop())
 				});
 			} else {
 				console.error('Download URL not found for ending:', item.extensionEnding, 'or index:', item.extIndex);
@@ -814,7 +1304,7 @@ function startDownload(tabId, initialData) {
 
 function _checkDownloads(tabId) {
 	let data = tabs[tabId];
-	if (!data || !data.downloadProgressData) {
+	if (!data || !data.downloadProgressData || data.isPaused) {
 		return;
 	}
 
@@ -843,8 +1333,21 @@ function _checkDownloads(tabId) {
 				item.state = 'starting';
 				workingCnt++;
 
-				console.log('Starting download for:', item.url);
-				chrome.downloads.download({ url: item.url }, function callback(downloadId) {
+				const sanitizeSegment = (str) => {
+					if (!str) return 'archive_item';
+					return str.replace(/[<>:"/\\|?*\u0000-\u001F]/g, '_').trim().slice(0, 80);
+				};
+
+				const folderName = sanitizeSegment(data.collectionIdentifier || 'downloads');
+				const rawName = item.filename || item.url.split('/').pop() || 'file';
+				const safeFileName = sanitizeSegment(decodeURIComponent(rawName));
+				const downloadPath = `ArchiveDownloader/${folderName}/${safeFileName}`;
+
+				console.log('Starting download for:', item.url, 'to:', downloadPath);
+				chrome.downloads.download({
+					url: item.url,
+					filename: downloadPath
+				}, function callback(downloadId) {
 					if (chrome.runtime.lastError) {
 						console.error('Download error:', chrome.runtime.lastError);
 						item.state = STATE.interrupted;

@@ -1,17 +1,19 @@
 <div align="center">
   
-# 📚 Archive Downloader Extension
+# 📚 Archive Downloader Extension `v1.0.3`
 
-### 🚀 The Ultimate Tool to Download Books, Videos & Collections from Archive.org
+### 🚀 The Ultimate High-Performance Tool to Download Books, Videos, Audio & Collections from Archive.org
 
 <br/>
 
 [![GitHub stars](https://img.shields.io/github/stars/AllLiveSupport/Archive-Downloader-Extension?style=for-the-badge&logo=github&color=orange)](https://github.com/AllLiveSupport/Archive-Downloader-Extension/stargazers)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
+[![Firefox Add-on](https://img.shields.io/badge/Firefox-Compatible-FF7139?style=for-the-badge&logo=firefox-browser&logoColor=white)](https://addons.mozilla.org)
 [![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/alllivesupport)
 
 <br/>
 
+<img src="https://img.shields.io/badge/Firefox-Supported-success?style=flat-square&logo=firefoxbrowser&logoColor=white"/>
 <img src="https://img.shields.io/badge/Chrome-Supported-success?style=flat-square&logo=googlechrome&logoColor=white"/>
 <img src="https://img.shields.io/badge/Edge-Supported-success?style=flat-square&logo=microsoftedge&logoColor=white"/>
 <img src="https://img.shields.io/badge/Brave-Supported-success?style=flat-square&logo=brave&logoColor=white"/>
@@ -19,7 +21,7 @@
 
 ---
 
-**✨ Batch Download • 🔄 Auto-Retry • 📝 Export Errors • 🛡️ Secure & Fast • 🖼️ Custom Branding**
+**✨ Universal Solr Facet Engine • 📁 Subfolder Organization • 🔎 Instant Filter • ⚖️ Live Size Calculator • ⏸️ Pause/Resume/Cancel • 🌓 Dark/Light Themes**
 
 </div>
 
@@ -29,30 +31,44 @@
 
 ## 📖 Overview
 
-**Archive Downloader Extension** is a powerful, "Swiss Army Knife" browser extension designed for Archive.org power users. Whether you are downloading a single book, a massive collection of audio files, or historical documents, this extension handles it all with ease, speed, and reliability.
+**Archive Downloader Extension** is a next-generation, powerhouse browser extension specifically engineered for **Archive.org** users, researchers, archivists, and collectors.
 
-Unlike simple downloaders, this tool is built to handle **bulk operations** and **network instability**, ensuring you get your files even if the connection drops.
+Whether you are downloading a single book, a multi-volume box set, a discography album, a video collection, or searching across millions of items with complex sidebar filters, **Archive Downloader** delivers 100% accurate results with unmatched speed, resilience, and convenience.
 
 ---
 
 ## 🌟 Key Features
 
-### 🚀 High-Performance Downloading
-- **Bulk Batch Downloading:** Select hundreds of files at once. No more clicking "Save As" one by one.
-- **Smart Filtering:** Automatically categorizes files by type (PDF, ZIP, JPEG, Audio, Video). Filter exactly what you need.
-- **Multi-Threaded:** Downloads multiple files simultaneously to maximize your bandwidth.
+### 🎯 Universal Search & Multi-Facet Engine
+- **Full Sidebar Facet Support:** Accurately processes complex sidebar combinations (`mediatype`, `creator`, `subject`, `year`, `collection`, `language`).
+- **Same-Field OR Grouping:** Combines multi-select items within the same category (e.g. `Texts` + `Movies`) seamlessly without dropping results.
+- **Cross-Language ISO Support:** Understands multilingual queries including Turkish, Japanese, Arabic, Russian, and ancient languages.
+- **Single Items & Multi-Track Albums:** Automatically binds audio tracks, video derivatives, artwork, and torrents into unified entries or clean individual tracks.
 
-### 🛡️ Reliability & Error Handling (New!)
-- **🔄 Smart Retry System:** 
-  - Did a download fail due to a server hiccup? The extension detects it instantly.
-  - A dedicated **"Retry Failed"** button appears, allowing you to re-queue *only* the failed items.
-- **📝 Export Failed Links:** 
-  - If some files persistently fail (e.g., access denied), you can export the list of failed URLs to a `.txt` file.
-  - Use this list with external tools like IDM or JDownloader for advanced handling.
+### 🔎 Instant Search & Smart Selection
+- **Live Search Filter:** Type any keyword (e.g., `"1996"`, `"Duke Nukem"`, `"Vol.1"`) to instantly filter displayed items in real-time.
+- **Filtered Selection:** "Select All" dynamically selects only currently visible filtered items when search is active.
+- **Direct Checkbox Selection:** Freely pick any file manually without needing to select a category first!
 
-### 🎨 Modern & User-Friendly Interface
-- **Clean Dashboard:** A clutter-free popup interface that mimics the look and feel of modern apps.
-- **Visual Feedback:** Color-coded status indicators (Blue: Downloading, Green: Completed, Red: Failed).
+### ⚖️ Total Download Size Calculator
+- **Real-Time Size Calculation:** Instantly calculates the cumulative disk space required for all selected files (e.g. `211 selected • 1.45 GB`).
+- **Dynamic Button:** The download button displays the total count and byte size before you click download.
+
+### 📁 Automatic Subfolder Organization
+- **Clean File Hierarchy:** Automatically saves downloaded files into dedicated subfolders based on collection names:
+  `Downloads/ArchiveDownloader/{Collection_Name}/{File_Name}`
+- **OS Path Sanitization:** Eliminates invalid file system characters (`:`, `*`, `?`, `"`, `<`, `>`, `|`) for 100% safe file saving.
+
+### 🛡️ Resilient Download Manager & Controls
+- **⏸️ Pause All & ▶️ Resume All:** Pause downloads at any time and resume them effortlessly.
+- **✕ Cancel All:** Abort running queues cleanly with a single click.
+- **🔄 Smart Retry System:** Re-queue failed or interrupted downloads automatically.
+- **📝 Export URLs (TXT):** Export all selected links or only failed links to `.txt` for external download managers (IDM, aria2, JDownloader).
+- **🛡️ Rate-Limit (HTTP 429) & Network Backoff:** 4-tier exponential retry handles temporary Archive.org server overload without missing a single item.
+
+### 🎨 Modern UI & Dark Mode
+- **Sleek Glassmorphic Design:** Polished interface with crisp typography and intuitive navigation.
+- **🌓 Dark / Light Theme Toggle:** Switch effortlessly between light and eye-friendly dark mode. Theme preference is automatically remembered.
 
 ---
 
@@ -60,10 +76,10 @@ Unlike simple downloaders, this tool is built to handle **bulk operations** and 
 
 <div align="center">
 
-| **🔍 Advanced Search & Filter** | **⬇️ Batch Download Manager** |
+| **🔍 Instant Search & Selection Dashboard** | **⬇️ Download Manager & Control Center** |
 |:---:|:---:|
-| <img src="docs/images/PAGE1.PNG" width="400" alt="Search View"> | <img src="docs/images/PAGE2.PNG" width="400" alt="Download View"> |
-| *Easily filter item types and select files* | *Track progress, retry failures, and export logs* |
+| <img src="docs/images/PAGE1.PNG" width="420" alt="Search and Filter View"> | <img src="docs/images/PAGE2.PNG" width="420" alt="Download Progress View"> |
+| *Smart categories, live search, and total size counter* | *Live progress tracking, pause/resume, retry, and export tools* |
 
 </div>
 
@@ -73,66 +89,60 @@ Unlike simple downloaders, this tool is built to handle **bulk operations** and 
 
 ## 🛠️ Installation Guide
 
-Since this is a powerful developer tool, you can install it in "Developer Mode" on any Chromium-based browser.
-
-1.  **Download the Code:**
-    - Clone this repository or download the ZIP file and extract it.
-    - `git clone https://github.com/AllLiveSupport/Archive-Downloader-Extension.git`
-
-2.  **Open Extension Management:**
-    - **Chrome:** Go to `chrome://extensions`
-    - **Edge:** Go to `edge://extensions`
-    - **Brave:** Go to `brave://extensions`
-
-3.  **Enable Developer Mode:**
-    - Look for the toggle switch (usually in the top-right corner) and turn it **ON**.
-
-4.  **Load the Extension:**
-    - Click **"Load Unpacked"** and pick the extension folder you just downloaded.
-
-5.  **Pin it:**
-    - Click the puzzle piece icon in your browser toolbar and pin **Archive Downloader** for easy access.
+### 🦊 Firefox (Recommended & AMO Compatible)
+1. **Download the Extension:**
+   - Clone or download this repository:
+   ```bash
+   git clone https://github.com/AllLiveSupport/Archive-Downloader-Extension.git
+   ```
+2. **Open Firefox Debugging:**
+   - Open Firefox and go to `about:debugging#/runtime/this-firefox`
+3. **Load Temporary Add-on:**
+   - Click **"Load Temporary Add-on..."**
+   - Select the `manifest.json` file inside the downloaded extension folder.
+4. **Pin to Toolbar:**
+   - Pin **Archive Downloader** to your toolbar and start archiving!
 
 ---
 
-## � How to Use
+### 🌐 Chrome / Brave / Edge / Opera
+1. **Open Extension Settings:**
+   - **Chrome:** `chrome://extensions`
+   - **Edge:** `edge://extensions`
+   - **Brave:** `brave://extensions`
+2. **Enable Developer Mode:**
+   - Toggle the switch in the top-right corner to **ON**.
+3. **Load Unpacked:**
+   - Click **"Load unpacked"** and select the extension folder.
 
-### 1. Navigate to Archive.org
-Go to any "Details" page on Archive.org. For example: `https://archive.org/details/nasa_techdocs`
+---
 
-### 2. Launch the Downloader
-Click the orange extension icon in your browser toolbar. The extension will automatically scanning the page for available files.
+## 🚀 How to Use
 
-### 3. Filter & Select
-- The extension lists all files associated with the item.
-- Use the **Category Tabs** to filter by format (e.g., "PDF only").
-- Use the checkboxes to select specific files or click **"Select All"**.
-
-### 4. Start Downloading
-Click the large **Download** button at the bottom. The view will switch to the "Downloading..." dashboard.
-
-### 5. Managing Failures (If needed)
-If any downloads turn **RED**:
-- Click **"Retry Failed"** to try them again automatically.
-- Click **"Export Errors (TXT)"** to save the links of the failed files.
+1. **Visit Archive.org:** Navigate to any collection, search page, user profile, or single item page (e.g. `https://archive.org/details/ephemera` or `https://archive.org/search?query=history`).
+2. **Open Archive Downloader:** Click the extension icon in your browser toolbar. It will automatically scan and list all available items.
+3. **Filter & Select:**
+   - Click a **Smart Category** (📚 Books, 🎬 Videos, 🎵 Audio, 📦 Archives, etc.) or specific format (.pdf, .mp4, .zip).
+   - Or simply use the search box and manually check the boxes you want!
+4. **Download:** Click the **Download** button. Files will be organized into your `ArchiveDownloader/` folder.
 
 ---
 
 ## ❓ FAQ
 
 <details>
-<summary><b>Does this work for borrowed books?</b></summary>
-This extension is primarily for downloading **public domain** and open-access files. If you need to download borrowed books, please use our specialized tool: [Archive Borrowed Book Downloader](https://github.com/AllLiveSupport/Archive-Borrowed-Book-Downloader).
+<summary><b>Can I download without choosing a category?</b></summary>
+Yes! You can directly check individual boxes for any file you want and hit Download. The extension will automatically pick the best quality format for each item.
 </details>
 
 <details>
-<summary><b>Can I download an entire collection?</b></summary>
-Yes! If the Archive.org page lists all the files (like in the "Show All" view), this extension can grab them all.
+<summary><b>Where are my files saved?</b></summary>
+Files are neatly organized in your browser's default Downloads folder under <code>ArchiveDownloader/{Collection_Name}/</code>.
 </details>
 
 <details>
-<summary><b>Why do some downloads fail?</b></summary>
-Archive.org servers can sometimes be slow or overloaded. Our "Retry" feature is designed specifically to handle these temporary connection drops.
+<summary><b>Does this work on large collections with 1000+ items?</b></summary>
+Yes! The extension uses high-capacity pagination and rate-limit backoff to scan thousands of items safely.
 </details>
 
 ---
@@ -140,17 +150,15 @@ Archive.org servers can sometimes be slow or overloaded. Our "Retry" feature is 
 ## ⚠️ Disclaimer
 
 > [!CAUTION]
-> **Legal Notice:** This tool is provided for **personal and educational purposes only**.
-
-- 📚 **Respect Copyright:** Do not use this tool to download materials for which you do not have legal rights or permission.
-- ⚖️ **Terms of Service:** You are solely responsible for your actions and for complying with **Archive.org's** Terms of Service.
-- 👤 **Liability:** The authors and contributors are not responsible for any misuse of this tool or any legal consequences resulting from its use.
+> **Legal Notice:** This tool is provided for **personal, research, and educational purposes only**.
+> - Respect Copyright: Download only public domain or openly licensed content.
+> - Comply with Archive.org's Terms of Service.
 
 ---
 
 ## 📜 License
 
-This project is licensed under the **MIT License**. See the [LICENSE](LICENSE) file for more details.
+This project is open-source under the **MIT License**. See the [LICENSE](LICENSE) file for details.
 
 ---
 

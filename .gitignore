@@ -5,3 +5,5 @@ Thumbs.db
 # Temporary scripts
 resize_icons.py
 *.tmp
+original_repo/
+*.zip
