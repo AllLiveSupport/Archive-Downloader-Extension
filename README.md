@@ -9,7 +9,7 @@
 [![GitHub stars](https://img.shields.io/github/stars/AllLiveSupport/Archive-Downloader-Extension?style=for-the-badge&logo=github&color=orange)](https://github.com/AllLiveSupport/Archive-Downloader-Extension/stargazers)
 [![License](https://img.shields.io/badge/License-MIT-green?style=for-the-badge&logo=opensourceinitiative&logoColor=white)](LICENSE)
 [![Firefox Add-on](https://img.shields.io/badge/Firefox-Compatible-FF7139?style=for-the-badge&logo=firefox-browser&logoColor=white)](https://addons.mozilla.org)
-[![Buy Me a Coffee](https://img.shields.io/badge/Buy%20Me%20a%20Coffee-FFDD00?style=for-the-badge&logo=buy-me-a-coffee&logoColor=black)](https://buymeacoffee.com/alllivesupport)
+
 
 <br/>
 
